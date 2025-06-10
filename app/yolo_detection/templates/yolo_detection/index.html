@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+
+{% block title %}实时桌面监控系统{% endblock %}
+
+{% block extra_css %}
+<style>
+    .container {
+        max-width: 1200px;
+        margin-top: 30px;
+    }
+    #preview, #monitor {
+        max-width: 100%;
+        margin-top: 20px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+    }
+    .loading {
+        display: none;
+        margin: 20px 0;
+    }
+    .monitor-controls {
+        margin: 20px 0;
+    }
+    .detection-info {
+        margin-top: 10px;
+        padding: 10px;
+        background-color: #f8f9fa;
+        border-radius: 4px;
+    }
+    .detection-item {
+        display: flex;
+        justify-content: space-between;
+        padding: 5px 0;
+        border-bottom: 1px solid #eee;
+    }
+    .detection-item:last-child {
+        border-bottom: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1 class="text-center mb-4">实时桌面监控系统</h1>
+    
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">图片检测</h5>
+                    <form id="uploadForm" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="image" class="form-label">选择图片</label>
+                            <input type="file" class="form-control" id="image" name="image" accept="image/*" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">开始检测</button>
+                    </form>
+                    
+                    <div class="loading text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">正在处理中...</p>
+                    </div>
+                    
+                    <div id="result" class="mt-4">
+                        <img id="preview" class="img-fluid" style="display: none;">
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">实时监控</h5>
+                    <div class="monitor-controls">
+                        <button id="startMonitor" class="btn btn-success">开始监控</button>
+                        <button id="stopMonitor" class="btn btn-danger" disabled>停止监控</button>
+                    </div>
+                    
+                    <div id="monitorContainer">
+                        <img id="monitor" class="img-fluid" style="display: none;">
+                    </div>
+                    
+                    <div class="detection-info">
+                        <h6>检测信息：</h6>
+                        <div id="detectionInfo"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // 图片上传检测
+    document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const formData = new FormData();
+        const imageFile = document.getElementById('image').files[0];
+        formData.append('image', imageFile);
+        
+        document.querySelector('.loading').style.display = 'block';
+        document.getElementById('preview').style.display = 'none';
+        
+        try {
+            const response = await fetch('/yolo-detection/detect', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                const preview = document.getElementById('preview');
+                preview.src = 'data:image/jpeg;base64,' + data.image;
+                preview.style.display = 'block';
+            } else {
+                alert('检测失败：' + data.error);
+            }
+        } catch (error) {
+            alert('发生错误：' + error.message);
+        } finally {
+            document.querySelector('.loading').style.display = 'none';
+        }
+    });
+
+    // 实时监控
+    let eventSource = null;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 5;
+    let isMonitoring = false;
+    const startButton = document.getElementById('startMonitor');
+    const stopButton = document.getElementById('stopMonitor');
+    const monitorImage = document.getElementById('monitor');
+    const detectionInfo = document.getElementById('detectionInfo');
+
+    function startMonitoring() {
+        if (eventSource) {
+            eventSource.close();
+        }
+
+        eventSource = new EventSource('/yolo-detection/video-feed');
+        
+        // 处理视频帧
+        eventSource.onmessage = function(event) {
+            if (event.data !== 'heartbeat') {
+                monitorImage.src = 'data:image/jpeg;base64,' + event.data;
+                monitorImage.style.display = 'block';
+            }
+        };
+
+        // 处理检测信息
+        eventSource.addEventListener('detections', function(event) {
+            let detections = {};
+            try {
+                detections = JSON.parse(event.data);
+            } catch (e) {
+                console.error('解析检测结果失败:', e);
+            }
+            
+            let html = '';
+            if (Object.keys(detections).length === 0) {
+                html = '<div>未检测到目标</div>';
+            } else {
+                for (const [cls, count] of Object.entries(detections)) {
+                    html += `<div class="detection-item"><span>${cls}</span><span>${count}</span></div>`;
+                }
+            }
+            detectionInfo.innerHTML = html;
+        });
+
+        // 处理连接错误
+        eventSource.onerror = function(error) {
+            console.error('SSE连接错误:', error);
+            eventSource.close();
+            
+            if (isMonitoring && reconnectAttempts < maxReconnectAttempts) {
+                reconnectAttempts++;
+                console.log(`尝试重新连接 (${reconnectAttempts}/${maxReconnectAttempts})...`);
+                setTimeout(startMonitoring, 1000);
+            } else if (isMonitoring) {
+                alert('连接失败，请重试');
+                stopMonitoring();
+            }
+        };
+
+        // 处理连接打开
+        eventSource.onopen = function() {
+            console.log('SSE连接已建立');
+            reconnectAttempts = 0;
+        };
+    }
+
+    startButton.addEventListener('click', async () => {
+        try {
+            const response = await fetch('/yolo-detection/start');
+            const data = await response.json();
+            
+            if (data.status === 'started') {
+                isMonitoring = true;
+                startButton.disabled = true;
+                stopButton.disabled = false;
+                startMonitoring();
+            } else {
+                alert('启动监控失败：' + (data.error || '未知错误'));
+            }
+        } catch (error) {
+            alert('启动监控失败：' + error.message);
+        }
+    });
+
+    stopButton.addEventListener('click', async () => {
+        try {
+            const response = await fetch('/yolo-detection/stop');
+            const data = await response.json();
+            
+            if (data.status === 'stopped') {
+                isMonitoring = false;
+                startButton.disabled = false;
+                stopButton.disabled = true;
+                
+                if (eventSource) {
+                    eventSource.close();
+                    eventSource = null;
+                }
+                
+                monitorImage.style.display = 'none';
+                detectionInfo.innerHTML = '';
+            } else {
+                alert('停止监控失败：' + (data.error || '未知错误'));
+            }
+        } catch (error) {
+            alert('停止监控失败：' + error.message);
+        }
+    });
+</script>
+{% endblock %} 

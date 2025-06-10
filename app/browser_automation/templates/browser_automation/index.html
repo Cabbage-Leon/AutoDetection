@@ -1,0 +1,301 @@
+{% extends "base.html" %}
+
+{% block title %}Browser Automation{% endblock %}
+
+{% block extra_css %}
+<style>
+    .operation-panel {
+        background-color: #f8f9fa;
+        padding: 20px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+    }
+    .result-panel {
+        background-color: #fff;
+        padding: 20px;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        margin-top: 20px;
+        max-height: 400px;
+        overflow-y: auto;
+    }
+    .element-info {
+        margin-top: 10px;
+        padding: 10px;
+        background-color: #e9ecef;
+        border-radius: 4px;
+    }
+    .selector-input {
+        margin-bottom: 10px;
+    }
+    .action-buttons {
+        margin-top: 15px;
+    }
+    .error-message {
+        color: #dc3545;
+        margin-top: 10px;
+        display: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1 class="text-center mb-4">Browser Automation</h1>
+    
+    <!-- URL输入区域 -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="input-group">
+                <input type="text" id="urlInput" class="form-control" placeholder="Enter URL (e.g., https://example.com)">
+                <button class="btn btn-primary" id="loadUrl">Load URL</button>
+            </div>
+            <div id="errorMessage" class="error-message"></div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- 内容抓取面板 -->
+        <div class="col-md-6">
+            <div class="operation-panel">
+                <h4>Content Scraping</h4>
+                <div class="selector-input">
+                    <label class="form-label">Selector Type</label>
+                    <select class="form-select" id="scrapeSelectorType">
+                        <option value="css">CSS Selector</option>
+                        <option value="xpath">XPath</option>
+                        <option value="text">Text Content</option>
+                        <option value="tag">Tag Name</option>
+                    </select>
+                </div>
+                <div class="selector-input">
+                    <label class="form-label">Selector Value</label>
+                    <input type="text" class="form-control" id="scrapeSelectorValue" placeholder="Enter selector value">
+                </div>
+                <div class="selector-input">
+                    <label class="form-label">Attribute (Optional)</label>
+                    <input type="text" class="form-control" id="scrapeAttribute" placeholder="Enter attribute name (e.g., href, src)">
+                </div>
+                <div class="action-buttons">
+                    <button class="btn btn-primary" id="scrapeContent">Scrape Content</button>
+                </div>
+                <div class="result-panel">
+                    <h5>Scraping Results</h5>
+                    <div id="scrapingResults"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 元素操作面板 -->
+        <div class="col-md-6">
+            <div class="operation-panel">
+                <h4>Element Interaction</h4>
+                <div class="selector-input">
+                    <label class="form-label">Selector Type</label>
+                    <select class="form-select" id="elementSelectorType">
+                        <option value="css">CSS Selector</option>
+                        <option value="xpath">XPath</option>
+                        <option value="text">Text Content</option>
+                        <option value="tag">Tag Name</option>
+                    </select>
+                </div>
+                <div class="selector-input">
+                    <label class="form-label">Selector Value</label>
+                    <input type="text" class="form-control" id="elementSelectorValue" placeholder="Enter selector value">
+                </div>
+                <div class="selector-input">
+                    <label class="form-label">Action</label>
+                    <select class="form-select" id="elementAction">
+                        <option value="click">Click</option>
+                        <option value="input">Input Text</option>
+                        <option value="select">Select Option</option>
+                        <option value="hover">Hover</option>
+                        <option value="scroll">Scroll Into View</option>
+                    </select>
+                </div>
+                <div class="selector-input" id="inputTextContainer" style="display: none;">
+                    <label class="form-label">Input Text</label>
+                    <input type="text" class="form-control" id="inputText" placeholder="Enter text to input">
+                </div>
+                <div class="selector-input" id="selectOptionContainer" style="display: none;">
+                    <label class="form-label">Option Value</label>
+                    <input type="text" class="form-control" id="selectOption" placeholder="Enter option value">
+                </div>
+                <div class="action-buttons">
+                    <button class="btn btn-primary" id="executeAction">Execute Action</button>
+                </div>
+                <div class="result-panel">
+                    <h5>Action Results</h5>
+                    <div id="actionResults"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // 获取DOM元素
+    const urlInput = document.getElementById('urlInput');
+    const loadUrlButton = document.getElementById('loadUrl');
+    const errorMessage = document.getElementById('errorMessage');
+    
+    // 内容抓取相关元素
+    const scrapeSelectorType = document.getElementById('scrapeSelectorType');
+    const scrapeSelectorValue = document.getElementById('scrapeSelectorValue');
+    const scrapeAttribute = document.getElementById('scrapeAttribute');
+    const scrapeContentButton = document.getElementById('scrapeContent');
+    const scrapingResults = document.getElementById('scrapingResults');
+    
+    // 元素操作相关元素
+    const elementSelectorType = document.getElementById('elementSelectorType');
+    const elementSelectorValue = document.getElementById('elementSelectorValue');
+    const elementAction = document.getElementById('elementAction');
+    const inputTextContainer = document.getElementById('inputTextContainer');
+    const inputText = document.getElementById('inputText');
+    const selectOptionContainer = document.getElementById('selectOptionContainer');
+    const selectOption = document.getElementById('selectOption');
+    const executeActionButton = document.getElementById('executeAction');
+    const actionResults = document.getElementById('actionResults');
+    
+    // 显示错误信息
+    function showError(message) {
+        errorMessage.textContent = message;
+        errorMessage.style.display = 'block';
+    }
+    
+    // 加载URL
+    loadUrlButton.addEventListener('click', async () => {
+        const url = urlInput.value.trim();
+        if (!url) {
+            showError('Please enter a valid URL');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/browser-automation/load-url', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ url })
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                errorMessage.style.display = 'none';
+                scrapeContentButton.disabled = false;
+                executeActionButton.disabled = false;
+            } else {
+                showError(data.error || 'Failed to load URL');
+            }
+        } catch (error) {
+            showError('Error: ' + error.message);
+        }
+    });
+    
+    // 处理元素操作类型变化
+    elementAction.addEventListener('change', () => {
+        inputTextContainer.style.display = elementAction.value === 'input' ? 'block' : 'none';
+        selectOptionContainer.style.display = elementAction.value === 'select' ? 'block' : 'none';
+    });
+    
+    // 执行内容抓取
+    scrapeContentButton.addEventListener('click', async () => {
+        const selectorType = scrapeSelectorType.value;
+        const selectorValue = scrapeSelectorValue.value.trim();
+        const attribute = scrapeAttribute.value.trim();
+        
+        if (!selectorValue) {
+            showError('Please enter a selector value');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/browser-automation/scrape', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    selector_type: selectorType,
+                    selector_value: selectorValue,
+                    attribute: attribute || null
+                })
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                displayScrapingResults(data.results);
+            } else {
+                showError(data.error || 'Failed to scrape content');
+            }
+        } catch (error) {
+            showError('Error: ' + error.message);
+        }
+    });
+    
+    // 执行元素操作
+    executeActionButton.addEventListener('click', async () => {
+        const selectorType = elementSelectorType.value;
+        const selectorValue = elementSelectorValue.value.trim();
+        const action = elementAction.value;
+        
+        if (!selectorValue) {
+            showError('Please enter a selector value');
+            return;
+        }
+        
+        const actionData = {
+            selector_type: selectorType,
+            selector_value: selectorValue,
+            action: action
+        };
+        
+        if (action === 'input' && inputText.value) {
+            actionData.input_text = inputText.value;
+        } else if (action === 'select' && selectOption.value) {
+            actionData.option_value = selectOption.value;
+        }
+        
+        try {
+            const response = await fetch('/browser-automation/execute-action', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(actionData)
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                displayActionResults(data.result);
+            } else {
+                showError(data.error || 'Failed to execute action');
+            }
+        } catch (error) {
+            showError('Error: ' + error.message);
+        }
+    });
+    
+    // 显示抓取结果
+    function displayScrapingResults(results) {
+        let html = '<div class="element-info">';
+        if (Array.isArray(results)) {
+            results.forEach((result, index) => {
+                html += `<div class="mb-2"><strong>Result ${index + 1}:</strong> ${result}</div>`;
+            });
+        } else {
+            html += `<div>${results}</div>`;
+        }
+        html += '</div>';
+        scrapingResults.innerHTML = html;
+    }
+    
+    // 显示操作结果
+    function displayActionResults(result) {
+        actionResults.innerHTML = `<div class="element-info">${result}</div>`;
+    }
+</script>
+{% endblock %} 
