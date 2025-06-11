@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+
+{% block title %}商品秒杀系统{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2 class="mb-4">商品秒杀系统</h2>
+    
+    <!-- 商品URL输入 -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">商品信息</h5>
+        </div>
+        <div class="card-body">
+            <div class="form-group">
+                <label for="productUrl">商品URL</label>
+                <input type="url" class="form-control" id="productUrl" placeholder="请输入商品页面URL">
+            </div>
+            <button class="btn btn-primary mt-2" onclick="loadProductPage()">加载商品页面</button>
+        </div>
+    </div>
+
+    <!-- 倒计时设置 -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">倒计时设置</h5>
+        </div>
+        <div class="card-body">
+            <div class="form-group">
+                <label for="countdownSelector">倒计时元素选择器</label>
+                <div class="input-group">
+                    <select class="form-control" id="countdownSelectorType">
+                        <option value="css">CSS选择器</option>
+                        <option value="xpath">XPath</option>
+                        <option value="text">文本内容</option>
+                    </select>
+                    <input type="text" class="form-control" id="countdownSelector" placeholder="输入选择器">
+                </div>
+            </div>
+            <div class="form-group mt-3">
+                <label for="countdownFormat">倒计时格式</label>
+                <input type="text" class="form-control" id="countdownFormat" placeholder="例如: HH:mm:ss">
+                <small class="form-text text-muted">指定倒计时的显示格式，用于解析时间</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- 提交按钮设置 -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">提交按钮设置</h5>
+        </div>
+        <div class="card-body">
+            <div class="form-group">
+                <label for="submitButtonSelector">提交按钮选择器</label>
+                <div class="input-group">
+                    <select class="form-control" id="submitButtonSelectorType">
+                        <option value="css">CSS选择器</option>
+                        <option value="xpath">XPath</option>
+                        <option value="text">文本内容</option>
+                    </select>
+                    <input type="text" class="form-control" id="submitButtonSelector" placeholder="输入选择器">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 状态显示 -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">运行状态</h5>
+        </div>
+        <div class="card-body">
+            <div id="statusDisplay" class="alert alert-info">
+                等待开始...
+            </div>
+            <div id="countdownDisplay" class="h4 text-center mb-3">
+                --:--:--
+            </div>
+            <div class="d-flex justify-content-center">
+                <button class="btn btn-success me-2" onclick="startSeckill()" id="startButton">开始秒杀</button>
+                <button class="btn btn-danger" onclick="stopSeckill()" id="stopButton" disabled>停止秒杀</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let isRunning = false;
+let countdownInterval = null;
+let clickInterval = null;
+
+async function loadProductPage() {
+    const url = document.getElementById('productUrl').value;
+    if (!url) {
+        alert('请输入商品URL');
+        return;
+    }
+
+    try {
+        const response = await fetch('/browser-automation/load-url', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ url: url })
+        });
+        const data = await response.json();
+        if (data.success) {
+            alert('商品页面加载成功');
+        } else {
+            alert('加载失败: ' + data.message);
+        }
+    } catch (error) {
+        alert('加载失败: ' + error.message);
+    }
+}
+
+function updateStatus(message, type = 'info') {
+    const statusDisplay = document.getElementById('statusDisplay');
+    statusDisplay.className = `alert alert-${type}`;
+    statusDisplay.textContent = message;
+}
+
+function updateCountdown(time) {
+    document.getElementById('countdownDisplay').textContent = time;
+}
+
+async function startSeckill() {
+    if (isRunning) return;
+
+    const countdownSelector = document.getElementById('countdownSelector').value;
+    const countdownSelectorType = document.getElementById('countdownSelectorType').value;
+    const countdownFormat = document.getElementById('countdownFormat').value;
+    const submitButtonSelector = document.getElementById('submitButtonSelector').value;
+    const submitButtonSelectorType = document.getElementById('submitButtonSelectorType').value;
+
+    if (!countdownSelector || !submitButtonSelector) {
+        alert('请填写所有必要的选择器');
+        return;
+    }
+
+    isRunning = true;
+    document.getElementById('startButton').disabled = true;
+    document.getElementById('stopButton').disabled = false;
+    updateStatus('正在运行...', 'success');
+
+    // 开始倒计时检查
+    countdownInterval = setInterval(async () => {
+        try {
+            const response = await fetch('/browser-automation/scrape', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    selector_type: countdownSelectorType,
+                    selector_value: countdownSelector
+                })
+            });
+            const data = await response.json();
+            if (data.success) {
+                updateCountdown(data.results[0]);
+                // 检查是否到达秒杀时间
+                if (data.results[0] === '00:00:00') {
+                    startClicking();
+                }
+            }
+        } catch (error) {
+            console.error('获取倒计时失败:', error);
+        }
+    }, 1000);
+}
+
+function startClicking() {
+    const submitButtonSelector = document.getElementById('submitButtonSelector').value;
+    const submitButtonSelectorType = document.getElementById('submitButtonSelectorType').value;
+
+    // 开始点击提交按钮
+    clickInterval = setInterval(async () => {
+        try {
+            const response = await fetch('/browser-automation/execute-action', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    selector_type: submitButtonSelectorType,
+                    selector_value: submitButtonSelector,
+                    action: 'click'
+                })
+            });
+            const data = await response.json();
+            if (data.success) {
+                updateStatus('提交成功！', 'success');
+                stopSeckill();
+            }
+        } catch (error) {
+            console.error('点击失败:', error);
+        }
+    }, 100); // 每100ms点击一次
+}
+
+function stopSeckill() {
+    isRunning = false;
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+    }
+    if (clickInterval) {
+        clearInterval(clickInterval);
+        clickInterval = null;
+    }
+    document.getElementById('startButton').disabled = false;
+    document.getElementById('stopButton').disabled = true;
+    updateStatus('已停止', 'info');
+    updateCountdown('--:--:--');
+}
+</script>
+{% endblock %} 
