@@ -1,9 +1,20 @@
 from flask import Flask
 from config import Config
+from flask_cors import CORS
 
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
+    
+    # 启用CORS，允许所有来源
+    CORS(app, resources={
+        r"/api/*": {
+            "origins": "*",  # 允许所有来源
+            "methods": ["GET", "POST", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization"],
+            "supports_credentials": True
+        }
+    })
 
     # 初始化YOLO检测
     from app.yolo_detection.detection import detection
@@ -20,7 +31,10 @@ def create_app(config_class=Config):
 
     from app.browser_automation import bp as browser_automation_bp
     app.register_blueprint(browser_automation_bp)
-    
+
+    # 注册API蓝图
+    from app.api.routes import bp as api_bp
+    app.register_blueprint(api_bp)
 
     # 设置根路由重定向到YOLO检测页面
     @app.route('/')

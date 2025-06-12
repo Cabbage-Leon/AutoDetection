@@ -11,12 +11,12 @@ bp = Blueprint('yolo_detection', __name__,
 def index():
     return render_template('yolo_detection/index.html')
 
-@bp.route('/start')
+@bp.route('/start', methods=['POST'])
 def start_monitoring():
     success, error = detection.start_monitoring()
     return jsonify({'status': 'started' if success else 'error', 'error': error})
 
-@bp.route('/stop')
+@bp.route('/stop', methods=['POST'])
 def stop_monitoring():
     success, error = detection.stop_monitoring()
     return jsonify({'status': 'stopped' if success else 'error', 'error': error})
@@ -29,6 +29,7 @@ def video_feed():
 
 @bp.route('/detect', methods=['POST'])
 def detect():
+    """网页应用的检测路由"""
     if 'image' not in request.files:
         return jsonify({'success': False, 'error': 'No image file provided'})
     
@@ -36,8 +37,8 @@ def detect():
     if file.filename == '':
         return jsonify({'success': False, 'error': 'No selected file'})
     
-    success, result = detection.detect_image(file.read())
+    success, result = detection.web_detect_image(file.read())
     if success:
-        return jsonify({'success': True, 'image': result})
+        return jsonify(result)
     else:
         return jsonify({'success': False, 'error': result}) 

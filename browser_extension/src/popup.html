@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Auto Detection</title>
+    <link rel="stylesheet" href="css/popup.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Auto Detection</h1>
+        <div class="controls">
+            <button id="startDetection">开始检测</button>
+            <button id="stopDetection">停止检测</button>
+        </div>
+        <div class="status">
+            <p>状态: <span id="statusText">未开始</span></p>
+        </div>
+        <div class="settings">
+            <h2>设置</h2>
+            <div class="setting-item">
+                <label for="serverUrl">服务器地址:</label>
+                <input type="text" id="serverUrl" value="http://localhost:5000">
+            </div>
+        </div>
+    </div>
+    <script src="js/popup.js"></script>
+</body>
+</html> 
