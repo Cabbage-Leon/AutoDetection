@@ -32,6 +32,10 @@ def create_app(config_class=Config):
     from app.browser_automation import bp as browser_automation_bp
     app.register_blueprint(browser_automation_bp)
 
+    # 注册秒杀模块蓝图
+    from app.seckill import bp as seckill_bp
+    app.register_blueprint(seckill_bp)
+
     # 注册API蓝图
     from app.api.routes import bp as api_bp
     app.register_blueprint(api_bp)

@@ -4,38 +4,86 @@
 
 {% block extra_css %}
 <style>
-    .operation-panel {
-        background-color: #f8f9fa;
-        padding: 20px;
-        border-radius: 8px;
-        margin-bottom: 20px;
+body {
+    background: #f4f6fa;
+}
+.container {
+    max-width: 1000px;
+}
+.operation-panel, .result-panel {
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    padding: 24px 20px 20px 20px;
+    margin-bottom: 24px;
+}
+.input-group, .selector-input {
+    margin-bottom: 16px;
+}
+input.form-control, select.form-select {
+    border-radius: 6px;
+    box-shadow: none;
+    border: 1px solid #d0d7de;
+    transition: border-color 0.2s;
+}
+input.form-control:focus, select.form-select:focus {
+    border-color: #409eff;
+    box-shadow: 0 0 0 2px #409eff22;
+}
+.btn {
+    border-radius: 6px;
+    font-weight: 500;
+    transition: background 0.2s, box-shadow 0.2s;
+}
+.btn-primary, .btn-primary:focus {
+    background: #409eff;
+    border: none;
+}
+.btn-primary:hover {
+    background: #1976d2;
+}
+.btn:active {
+    box-shadow: 0 2px 8px #409eff33;
+}
+.element-info {
+    background: #f8fafc;
+    border-radius: 8px;
+    border: 1px solid #e0e6ed;
+    margin-bottom: 18px;
+    padding: 16px 18px;
+    font-size: 15px;
+    box-shadow: 0 1px 3px #e0e6ed55;
+}
+.element-info strong {
+    color: #1976d2;
+}
+.element-info pre {
+    background: #f3f6fa;
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 13px;
+    margin: 4px 0 0 0;
+}
+.action-buttons {
+    margin-top: 12px;
+}
+.action-buttons .btn {
+    margin-right: 8px;
+    margin-bottom: 6px;
+}
+.alert {
+    margin-top: 18px;
+    border-radius: 6px;
+    font-size: 15px;
+}
+@media (max-width: 768px) {
+    .operation-panel, .result-panel, .element-info {
+        padding: 12px 8px;
     }
-    .result-panel {
-        background-color: #fff;
-        padding: 20px;
-        border: 1px solid #dee2e6;
-        border-radius: 8px;
-        margin-top: 20px;
-        max-height: 400px;
-        overflow-y: auto;
+    .container {
+        padding: 0 2px;
     }
-    .element-info {
-        margin-top: 10px;
-        padding: 10px;
-        background-color: #e9ecef;
-        border-radius: 4px;
-    }
-    .selector-input {
-        margin-bottom: 10px;
-    }
-    .action-buttons {
-        margin-top: 15px;
-    }
-    .error-message {
-        color: #dc3545;
-        margin-top: 10px;
-        display: none;
-    }
+}
 </style>
 {% endblock %}
 
@@ -163,6 +211,7 @@
     function showError(message) {
         errorMessage.textContent = message;
         errorMessage.style.display = 'block';
+        setTimeout(()=>{errorMessage.style.display='none';}, 3000);
     }
     
     // 加载URL
@@ -281,21 +330,42 @@
     
     // 显示抓取结果
     function displayScrapingResults(results) {
-        let html = '<div class="element-info">';
-        if (Array.isArray(results)) {
+        let html = '';
+        if (Array.isArray(results) && results.length > 0) {
             results.forEach((result, index) => {
-                html += `<div class="mb-2"><strong>Result ${index + 1}:</strong> ${result}</div>`;
+                html += `
+                    <div class="element-info mb-2">
+                        <div><strong>类型：</strong>${result.type || '-'}</div>
+                        <div><strong>标签：</strong>&lt;${result.tag || '-'}&gt;</div>
+                        <div><strong>内容：</strong>${result.content || '<em>无</em>'}</div>
+                        <div><strong>属性：</strong><pre style="margin:0;">${result.attributes ? JSON.stringify(result.attributes, null, 2) : '-'}</pre></div>
+                        <div class="action-buttons">
+                            <button class="btn btn-sm btn-primary" onclick="quickAction('click', '${result.tag}', ${index})">点击</button>
+                            <button class="btn btn-sm btn-info" onclick="quickAction('input', '${result.tag}', ${index})">输入</button>
+                            <button class="btn btn-sm btn-warning" onclick="quickAction('select', '${result.tag}', ${index})">选择</button>
+                            <button class="btn btn-sm btn-secondary" onclick="quickAction('hover', '${result.tag}', ${index})">悬停</button>
+                            <button class="btn btn-sm btn-dark" onclick="quickAction('scroll', '${result.tag}', ${index})">滚动</button>
+                        </div>
+                    </div>
+                `;
             });
         } else {
-            html += `<div>${results}</div>`;
+            html = '<div class="element-info">未找到匹配元素</div>';
         }
-        html += '</div>';
         scrapingResults.innerHTML = html;
     }
     
     // 显示操作结果
     function displayActionResults(result) {
         actionResults.innerHTML = `<div class="element-info">${result}</div>`;
+    }
+
+    // 快捷操作函数（可选，实际可根据你后端接口实现）
+    function quickAction(action, tag, index) {
+        // 这里可以自动填充操作面板的selector和action，然后触发操作
+        // 例如：elementSelectorType.value = 'tag'; elementSelectorValue.value = tag; elementAction.value = action;
+        // 你也可以直接发请求，具体看你需求
+        alert(`你点击了${action}，第${index+1}个元素`);
     }
 </script>
 {% endblock %} 

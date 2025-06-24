@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}秒杀模拟Demo{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">秒杀倒计时模拟Demo</h5>
+            </div>
+            <div class="card-body">
+                <form id="countdownForm" class="mb-3">
+                    <div class="input-group mb-3">
+                        <span class="input-group-text">倒计时秒数</span>
+                        <input type="number" class="form-control" id="countdownInput" value="10" min="1" max="3600">
+                        <button type="submit" class="btn btn-outline-primary">设置</button>
+                    </div>
+                </form>
+                <div class="text-center mb-3">
+                    <h3 id="countdownDisplay">10</h3>
+                    <small class="text-muted">秒后可抢购</small>
+                </div>
+                <div class="d-grid">
+                    <button id="seckillBtn" class="btn btn-danger btn-lg" disabled>抢购</button>
+                </div>
+                <div id="resultMsg" class="mt-3 text-center"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let countdown = 10;
+let timer = null;
+const countdownInput = document.getElementById('countdownInput');
+const countdownDisplay = document.getElementById('countdownDisplay');
+const seckillBtn = document.getElementById('seckillBtn');
+const resultMsg = document.getElementById('resultMsg');
+
+function startCountdown() {
+    seckillBtn.disabled = true;
+    resultMsg.innerHTML = '';
+    countdownDisplay.textContent = countdown;
+    if (timer) clearInterval(timer);
+    timer = setInterval(() => {
+        countdown--;
+        countdownDisplay.textContent = countdown;
+        if (countdown <= 0) {
+            clearInterval(timer);
+            seckillBtn.disabled = false;
+            countdownDisplay.textContent = '可以抢购!';
+        }
+    }, 1000);
+}
+
+document.getElementById('countdownForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    countdown = parseInt(countdownInput.value) || 10;
+    startCountdown();
+});
+
+seckillBtn.addEventListener('click', function() {
+    seckillBtn.disabled = true;
+    resultMsg.innerHTML = '<span class="text-success fw-bold">抢购成功！🎉</span>';
+});
+
+// 页面加载自动开始倒计时
+window.onload = startCountdown;
+</script>
+{% endblock %} 

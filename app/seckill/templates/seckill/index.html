@@ -1,0 +1,1150 @@
+{% extends "base.html" %}
+
+{% block title %}智能秒杀系统{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <!-- 左侧任务管理面板 -->
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">任务管理</h5>
+                    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addTaskModal">
+                        <i class="fas fa-plus"></i> 添加任务
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div id="taskList" class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>任务名称</th>
+                                    <th>状态</th>
+                                    <th>执行时间</th>
+                                    <th>进度</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="taskTableBody">
+                                <!-- 任务列表将通过JavaScript动态加载 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧状态面板 -->
+        <div class="col-md-4">
+            <!-- 时间同步状态 -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6 class="mb-0">时间同步</h6>
+                </div>
+                <div class="card-body">
+                    <div id="timeInfo">
+                        <div class="row">
+                            <div class="col-6">
+                                <small class="text-muted">本地时间</small>
+                                <div id="localTime">--:--:--</div>
+                            </div>
+                            <div class="col-6">
+                                <small class="text-muted">北京时间</small>
+                                <div id="beijingTime">--:--:--</div>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <small class="text-muted">同步状态</small>
+                            <div id="syncStatus" class="badge bg-secondary">未同步</div>
+                        </div>
+                        <button class="btn btn-outline-primary btn-sm mt-2" onclick="syncTime()">
+                            <i class="fas fa-sync"></i> 同步时间
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 调度器状态 -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6 class="mb-0">调度器状态</h6>
+                </div>
+                <div class="card-body">
+                    <div id="schedulerStatus">
+                        <div class="row">
+                            <div class="col-6">
+                                <small class="text-muted">运行状态</small>
+                                <div id="schedulerRunning" class="badge bg-danger">已停止</div>
+                            </div>
+                            <div class="col-6">
+                                <small class="text-muted">任务数量</small>
+                                <div id="taskCount">0</div>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <button class="btn btn-success btn-sm me-1" onclick="startScheduler()">
+                                <i class="fas fa-play"></i> 启动
+                            </button>
+                            <button class="btn btn-danger btn-sm" onclick="stopScheduler()">
+                                <i class="fas fa-stop"></i> 停止
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 快速操作 -->
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0">快速操作</h6>
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-outline-info btn-sm" onclick="openTaskManager()">
+                            <i class="fas fa-tasks"></i> 任务管理
+                        </button>
+                        <button class="btn btn-outline-warning btn-sm" onclick="openElementSelector()">
+                            <i class="fas fa-mouse-pointer"></i> 元素选择器
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="openSettings()">
+                            <i class="fas fa-cog"></i> 系统设置
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 添加任务模态框 -->
+<div class="modal fade" id="addTaskModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-plus-circle me-2"></i>添加秒杀任务
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- 步骤指示器 -->
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <div class="progress" style="height: 4px;">
+                            <div class="progress-bar" id="stepProgress" role="progressbar" style="width: 50%"></div>
+                        </div>
+                        <div class="d-flex justify-content-between mt-2">
+                            <span class="badge bg-primary" id="step1Badge">步骤 1: 基础设置</span>
+                            <span class="badge bg-secondary" id="step2Badge">步骤 2: 高级设置</span>
+                        </div>
+                    </div>
+                </div>
+
+                <form id="addTaskForm">
+                    <!-- 步骤一：基础设置 -->
+                    <div id="step1" class="step-content">
+                        <div class="card border-primary">
+                            <div class="card-header bg-primary text-white">
+                                <h6 class="mb-0">
+                                    <i class="fas fa-cog me-2"></i>基础设置
+                                    <span class="badge bg-light text-primary ms-2">必填</span>
+                                </h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="taskName" class="form-label">
+                                                任务名称 <span class="text-danger">*</span>
+                                                <i class="fas fa-question-circle text-muted ms-1" 
+                                                   data-bs-toggle="tooltip" title="给任务起一个容易识别的名字"></i>
+                                            </label>
+                                            <input type="text" class="form-control" id="taskName" required 
+                                                   placeholder="例如：iPhone 15 秒杀任务">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="taskUrl" class="form-label">
+                                                目标URL <span class="text-danger">*</span>
+                                                <i class="fas fa-question-circle text-muted ms-1" 
+                                                   data-bs-toggle="tooltip" title="要秒杀的商品页面地址"></i>
+                                            </label>
+                                            <input type="url" class="form-control" id="taskUrl" required 
+                                                   placeholder="https://example.com/product/123">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="executionTime" class="form-label">
+                                                执行时间 <span class="text-danger">*</span>
+                                                <i class="fas fa-question-circle text-muted ms-1" 
+                                                   data-bs-toggle="tooltip" title="设置秒杀开始的时间"></i>
+                                            </label>
+                                            <input type="datetime-local" class="form-control" id="executionTime" required>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="timezone" class="form-label">
+                                                时区
+                                                <i class="fas fa-question-circle text-muted ms-1" 
+                                                   data-bs-toggle="tooltip" title="选择执行时间的时区"></i>
+                                            </label>
+                                            <select class="form-control" id="timezone">
+                                                <option value="Asia/Shanghai">北京时间 (UTC+8)</option>
+                                                <option value="local">本地时间</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="targetSelector" class="form-label">
+                                                目标元素选择器 <span class="text-danger">*</span>
+                                                <i class="fas fa-question-circle text-muted ms-1" 
+                                                   data-bs-toggle="tooltip" title="要点击的按钮或链接的选择器"></i>
+                                            </label>
+                                            <div class="input-group">
+                                                <input type="text" class="form-control" id="targetSelector" required 
+                                                       placeholder="例如：#buy-button 或 .submit-btn">
+                                                <button type="button" class="btn btn-outline-secondary" onclick="openElementSelector()">
+                                                    <i class="fas fa-mouse-pointer"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="targetType" class="form-label">
+                                                选择器类型
+                                                <i class="fas fa-question-circle text-muted ms-1" 
+                                                   data-bs-toggle="tooltip" title="选择器使用的定位方式"></i>
+                                            </label>
+                                            <select class="form-control" id="targetType">
+                                                <option value="css">CSS选择器 (推荐)</option>
+                                                <option value="xpath">XPath</option>
+                                                <option value="text">文本内容</option>
+                                                <option value="tag">标签名</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="clickMode" class="form-label">
+                                                点击模式 <span class="text-danger">*</span>
+                                                <span class="badge bg-success ms-2">推荐</span>
+                                                <i class="fas fa-question-circle text-muted ms-1" 
+                                                   data-bs-toggle="tooltip" title="单次点击适合大多数场景，连续点击适合高并发秒杀"></i>
+                                            </label>
+                                            <select class="form-control" id="clickMode">
+                                                <option value="single">单次点击 (推荐)</option>
+                                                <option value="continuous">连续点击 (高并发)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <button type="button" class="btn btn-outline-info btn-sm mt-4" onclick="loadRecommendedConfig()">
+                                                <i class="fas fa-magic"></i> 加载推荐配置
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 步骤二：高级设置 -->
+                    <div id="step2" class="step-content" style="display: none;">
+                        <div class="card border-secondary">
+                            <div class="card-header bg-secondary text-white">
+                                <h6 class="mb-0">
+                                    <i class="fas fa-sliders-h me-2"></i>高级设置
+                                    <span class="badge bg-light text-secondary ms-2">可选</span>
+                                </h6>
+                            </div>
+                            <div class="card-body">
+                                <!-- 连续点击设置 -->
+                                <div id="continuousSettings" class="mb-4" style="display: none;">
+                                    <h6 class="text-primary mb-3">
+                                        <i class="fas fa-mouse me-2"></i>连续点击设置
+                                    </h6>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="clickCount" class="form-label">
+                                                    连续点击次数
+                                                    <i class="fas fa-question-circle text-muted ms-1" 
+                                                       data-bs-toggle="tooltip" title="设置连续点击的次数，建议1-10次"></i>
+                                                </label>
+                                                <input type="number" class="form-control" id="clickCount" value="1" min="1" max="100">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="clickInterval" class="form-label">
+                                                    点击间隔（秒）
+                                                    <i class="fas fa-question-circle text-muted ms-1" 
+                                                       data-bs-toggle="tooltip" title="连续点击之间的间隔时间"></i>
+                                                </label>
+                                                <input type="number" class="form-control" id="clickInterval" value="0.1" min="0.01" max="10" step="0.01">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 倒计时设置 -->
+                                <div class="mb-4">
+                                    <h6 class="text-info mb-3">
+                                        <i class="fas fa-clock me-2"></i>倒计时设置
+                                        <small class="text-muted">(仅当页面有倒计时显示时填写)</small>
+                                    </h6>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="countdownSelector" class="form-label">
+                                                    倒计时元素选择器
+                                                    <i class="fas fa-question-circle text-muted ms-1" 
+                                                       data-bs-toggle="tooltip" title="页面倒计时显示元素的选择器"></i>
+                                                </label>
+                                                <input type="text" class="form-control" id="countdownSelector" 
+                                                       placeholder="例如：.countdown-timer">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="countdownType" class="form-label">
+                                                    倒计时选择器类型
+                                                </label>
+                                                <select class="form-control" id="countdownType">
+                                                    <option value="css">CSS选择器</option>
+                                                    <option value="xpath">XPath</option>
+                                                    <option value="text">文本内容</option>
+                                                    <option value="tag">标签名</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="countdownThreshold" class="form-label">
+                                                    倒计时阈值（秒）
+                                                    <i class="fas fa-question-circle text-muted ms-1" 
+                                                       data-bs-toggle="tooltip" title="倒计时小于等于此值时开始执行"></i>
+                                                </label>
+                                                <input type="number" class="form-control" id="countdownThreshold" value="0" min="0">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 执行控制设置 -->
+                                <div class="mb-4">
+                                    <h6 class="text-warning mb-3">
+                                        <i class="fas fa-cogs me-2"></i>执行控制设置
+                                    </h6>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="frequency" class="form-label">
+                                                    执行频率（秒）
+                                                    <i class="fas fa-question-circle text-muted ms-1" 
+                                                       data-bs-toggle="tooltip" title="任务重试的间隔时间"></i>
+                                                </label>
+                                                <input type="number" class="form-control" id="frequency" value="1" min="1">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="maxAttempts" class="form-label">
+                                                    最大尝试次数
+                                                    <i class="fas fa-question-circle text-muted ms-1" 
+                                                       data-bs-toggle="tooltip" title="任务最大重试次数，防止无限循环"></i>
+                                                </label>
+                                                <input type="number" class="form-control" id="maxAttempts" value="10" min="1">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 任务备注 -->
+                                <div class="mb-3">
+                                    <label for="taskRemark" class="form-label">
+                                        任务备注
+                                        <i class="fas fa-question-circle text-muted ms-1" 
+                                           data-bs-toggle="tooltip" title="添加任务说明或备注信息"></i>
+                                    </label>
+                                    <textarea class="form-control" id="taskRemark" rows="3" 
+                                              placeholder="可选：添加任务说明、注意事项等"></textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> 取消
+                </button>
+                <button type="button" class="btn btn-outline-primary" id="prevStepBtn" onclick="prevStep()" style="display: none;">
+                    <i class="fas fa-arrow-left"></i> 上一步
+                </button>
+                <button type="button" class="btn btn-primary" id="nextStepBtn" onclick="nextStep()">
+                    <i class="fas fa-arrow-right"></i> 下一步
+                </button>
+                <button type="button" class="btn btn-success" id="submitBtn" onclick="createTask()" style="display: none;">
+                    <i class="fas fa-check"></i> 创建任务
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 任务详情模态框 -->
+<div class="modal fade" id="taskDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">任务详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="taskDetailContent">
+                    <!-- 任务详情将通过JavaScript动态加载 -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// 全局变量
+let tasks = [];
+let timeUpdateInterval;
+let schedulerUpdateInterval;
+let currentStep = 1;
+
+// 页面加载完成后初始化
+document.addEventListener('DOMContentLoaded', function() {
+    initializePage();
+    initializeTooltips();
+});
+
+function initializePage() {
+    // 启动调度器
+    startScheduler();
+    
+    // 同步时间
+    syncTime();
+    
+    // 加载任务列表
+    loadTasks();
+    
+    // 设置定时器
+    timeUpdateInterval = setInterval(updateTimeDisplay, 1000);
+    schedulerUpdateInterval = setInterval(updateSchedulerStatus, 5000);
+    
+    // 设置执行时间默认值为当前时间+5分钟
+    const now = new Date();
+    now.setMinutes(now.getMinutes() + 5);
+    document.getElementById('executionTime').value = now.toISOString().slice(0, 16);
+
+    // 点击模式切换逻辑
+    document.getElementById('clickMode').addEventListener('change', function() {
+        toggleContinuousSettings();
+    });
+    
+    // 倒计时选择器联动
+    document.getElementById('countdownSelector').addEventListener('input', function() {
+        toggleCountdownSettings();
+    });
+}
+
+function initializeTooltips() {
+    // 初始化所有工具提示
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+}
+
+// 分步表单相关函数
+function nextStep() {
+    if (currentStep === 1) {
+        if (validateStep1()) {
+            currentStep = 2;
+            showStep2();
+            updateStepProgress();
+        }
+    }
+}
+
+function prevStep() {
+    if (currentStep === 2) {
+        currentStep = 1;
+        showStep1();
+        updateStepProgress();
+    }
+}
+
+function showStep1() {
+    document.getElementById('step1').style.display = 'block';
+    document.getElementById('step2').style.display = 'none';
+    document.getElementById('prevStepBtn').style.display = 'none';
+    document.getElementById('nextStepBtn').style.display = 'inline-block';
+    document.getElementById('submitBtn').style.display = 'none';
+}
+
+function showStep2() {
+    document.getElementById('step1').style.display = 'none';
+    document.getElementById('step2').style.display = 'block';
+    document.getElementById('prevStepBtn').style.display = 'inline-block';
+    document.getElementById('nextStepBtn').style.display = 'none';
+    document.getElementById('submitBtn').style.display = 'inline-block';
+}
+
+function updateStepProgress() {
+    const progress = currentStep === 1 ? 50 : 100;
+    document.getElementById('stepProgress').style.width = progress + '%';
+    
+    // 更新步骤徽章
+    if (currentStep === 1) {
+        document.getElementById('step1Badge').className = 'badge bg-primary';
+        document.getElementById('step2Badge').className = 'badge bg-secondary';
+    } else {
+        document.getElementById('step1Badge').className = 'badge bg-success';
+        document.getElementById('step2Badge').className = 'badge bg-primary';
+    }
+}
+
+function validateStep1() {
+    const requiredFields = ['taskName', 'taskUrl', 'executionTime', 'targetSelector'];
+    let isValid = true;
+    
+    requiredFields.forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (!field.value.trim()) {
+            field.classList.add('is-invalid');
+            isValid = false;
+        } else {
+            field.classList.remove('is-invalid');
+        }
+    });
+    
+    if (!isValid) {
+        showToast('请填写所有必填字段', 'warning');
+    }
+    
+    return isValid;
+}
+
+function toggleContinuousSettings() {
+    const clickMode = document.getElementById('clickMode').value;
+    const continuousSettings = document.getElementById('continuousSettings');
+    
+    if (clickMode === 'continuous') {
+        continuousSettings.style.display = 'block';
+    } else {
+        continuousSettings.style.display = 'none';
+    }
+}
+
+function toggleCountdownSettings() {
+    const countdownSelector = document.getElementById('countdownSelector').value;
+    const countdownType = document.getElementById('countdownType');
+    const countdownThreshold = document.getElementById('countdownThreshold');
+    
+    if (countdownSelector.trim()) {
+        countdownType.disabled = false;
+        countdownThreshold.disabled = false;
+    } else {
+        countdownType.disabled = true;
+        countdownThreshold.disabled = true;
+    }
+}
+
+function loadRecommendedConfig() {
+    // 加载推荐配置
+    const configs = {
+        'single': {
+            click_mode: 'single',
+            click_count: 1,
+            click_interval: 0.1,
+            frequency: 1,
+            max_attempts: 10,
+            countdown_threshold: 0
+        },
+        'continuous': {
+            click_mode: 'continuous',
+            click_count: 3,
+            click_interval: 0.05,
+            frequency: 0.5,
+            max_attempts: 20,
+            countdown_threshold: 0
+        },
+        'high_concurrency': {
+            click_mode: 'continuous',
+            click_count: 5,
+            click_interval: 0.02,
+            frequency: 0.2,
+            max_attempts: 50,
+            countdown_threshold: 0
+        }
+    };
+    
+    // 显示配置选择对话框
+    const configType = prompt('选择推荐配置类型：\n1. single - 单次点击（推荐新手）\n2. continuous - 连续点击（推荐）\n3. high_concurrency - 高并发（高级用户）', 'continuous');
+    
+    if (configType && configs[configType]) {
+        const config = configs[configType];
+        
+        // 应用配置
+        document.getElementById('clickMode').value = config.click_mode;
+        document.getElementById('clickCount').value = config.click_count;
+        document.getElementById('clickInterval').value = config.click_interval;
+        document.getElementById('frequency').value = config.frequency;
+        document.getElementById('maxAttempts').value = config.max_attempts;
+        document.getElementById('countdownThreshold').value = config.countdown_threshold;
+        
+        // 触发联动
+        toggleContinuousSettings();
+        
+        showToast('推荐配置已加载', 'success');
+    }
+}
+
+function resetForm() {
+    // 重置表单到初始状态
+    document.getElementById('addTaskForm').reset();
+    currentStep = 1;
+    showStep1();
+    updateStepProgress();
+    
+    // 设置默认执行时间
+    const now = new Date();
+    now.setMinutes(now.getMinutes() + 5);
+    document.getElementById('executionTime').value = now.toISOString().slice(0, 16);
+    
+    // 重置联动状态
+    toggleContinuousSettings();
+    toggleCountdownSettings();
+    
+    // 清除验证状态
+    document.querySelectorAll('.is-invalid').forEach(el => {
+        el.classList.remove('is-invalid');
+    });
+}
+
+// 创建任务函数（更新版）
+function createTask() {
+    if (!validateStep1()) {
+        showToast('请完善必填信息', 'warning');
+        return;
+    }
+    
+    const taskData = {
+        name: document.getElementById('taskName').value,
+        url: document.getElementById('taskUrl').value,
+        target_selector: document.getElementById('targetSelector').value,
+        target_type: document.getElementById('targetType').value,
+        execution_time: document.getElementById('executionTime').value,
+        timezone: document.getElementById('timezone').value,
+        click_mode: document.getElementById('clickMode').value,
+        click_count: parseInt(document.getElementById('clickCount').value),
+        click_interval: parseFloat(document.getElementById('clickInterval').value),
+        frequency: parseInt(document.getElementById('frequency').value),
+        max_attempts: parseInt(document.getElementById('maxAttempts').value),
+        countdown_threshold: parseInt(document.getElementById('countdownThreshold').value),
+        countdown_selector: document.getElementById('countdownSelector').value || null,
+        countdown_type: document.getElementById('countdownType').value || null,
+        remark: document.getElementById('taskRemark').value || null
+    };
+    
+    // 验证连续点击设置
+    if (taskData.click_mode === 'continuous' && taskData.click_count < 1) {
+        showToast('连续点击次数必须大于0', 'warning');
+        return;
+    }
+    
+    // 发送创建请求
+    fetch('/seckill/api/tasks', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(taskData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('任务创建成功', 'success');
+            // 关闭模态框并重置表单
+            const modal = bootstrap.Modal.getInstance(document.getElementById('addTaskModal'));
+            modal.hide();
+            resetForm();
+            // 刷新任务列表
+            loadTasks();
+        } else {
+            showToast('任务创建失败: ' + data.message, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('创建任务失败:', error);
+        showToast('创建任务失败', 'error');
+    });
+}
+
+// 打开元素选择器
+function openElementSelector() {
+    // 这里可以打开元素选择器页面或弹窗
+    showToast('元素选择器功能开发中', 'info');
+}
+
+// 显示Toast通知
+function showToast(message, type = 'info') {
+    // 创建Toast元素
+    const toastHtml = `
+        <div class="toast align-items-center text-white bg-${type === 'success' ? 'success' : type === 'error' ? 'danger' : type === 'warning' ? 'warning' : 'info'} border-0" role="alert">
+            <div class="d-flex">
+                <div class="toast-body">
+                    ${message}
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        </div>
+    `;
+    
+    // 添加到页面
+    const toastContainer = document.getElementById('toastContainer') || createToastContainer();
+    toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+    
+    // 显示Toast
+    const toastElement = toastContainer.lastElementChild;
+    const toast = new bootstrap.Toast(toastElement);
+    toast.show();
+    
+    // 自动移除
+    toastElement.addEventListener('hidden.bs.toast', function() {
+        toastElement.remove();
+    });
+}
+
+function createToastContainer() {
+    const container = document.createElement('div');
+    container.id = 'toastContainer';
+    container.className = 'toast-container position-fixed top-0 end-0 p-3';
+    container.style.zIndex = '9999';
+    document.body.appendChild(container);
+    return container;
+}
+
+// 时间相关函数
+function syncTime() {
+    fetch('/seckill/api/time/sync', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            updateTimeDisplay();
+            showToast('时间同步成功', 'success');
+        } else {
+            showToast('时间同步失败: ' + data.message, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('时间同步失败:', error);
+        showToast('时间同步失败', 'error');
+    });
+}
+
+function updateTimeDisplay() {
+    fetch('/seckill/api/time/info')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            const timeInfo = data.data;
+            
+            // 更新本地时间
+            const localTime = new Date(timeInfo.local_time);
+            document.getElementById('localTime').textContent = localTime.toLocaleTimeString();
+            
+            // 更新北京时间
+            const beijingTime = new Date(timeInfo.beijing_time);
+            document.getElementById('beijingTime').textContent = beijingTime.toLocaleTimeString();
+            
+            // 更新同步状态
+            const syncStatus = document.getElementById('syncStatus');
+            if (timeInfo.sync_status === 'synced') {
+                syncStatus.textContent = '已同步';
+                syncStatus.className = 'badge bg-success';
+            } else {
+                syncStatus.textContent = '未同步';
+                syncStatus.className = 'badge bg-secondary';
+            }
+        }
+    })
+    .catch(error => {
+        console.error('获取时间信息失败:', error);
+    });
+}
+
+// 调度器相关函数
+function startScheduler() {
+    fetch('/seckill/api/scheduler/start', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            updateSchedulerStatus();
+            showToast('调度器启动成功', 'success');
+        } else {
+            showToast('调度器启动失败: ' + data.message, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('启动调度器失败:', error);
+        showToast('启动调度器失败', 'error');
+    });
+}
+
+function stopScheduler() {
+    fetch('/seckill/api/scheduler/stop', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            updateSchedulerStatus();
+            showToast('调度器停止成功', 'success');
+        } else {
+            showToast('调度器停止失败: ' + data.message, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('停止调度器失败:', error);
+        showToast('停止调度器失败', 'error');
+    });
+}
+
+function updateSchedulerStatus() {
+    fetch('/seckill/api/scheduler/status')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            const status = data.data;
+            
+            // 更新运行状态
+            const runningStatus = document.getElementById('schedulerRunning');
+            if (status.is_running) {
+                runningStatus.textContent = '运行中';
+                runningStatus.className = 'badge bg-success';
+            } else {
+                runningStatus.textContent = '已停止';
+                runningStatus.className = 'badge bg-danger';
+            }
+            
+            // 更新任务数量
+            document.getElementById('taskCount').textContent = status.total_tasks;
+        }
+    })
+    .catch(error => {
+        console.error('获取调度器状态失败:', error);
+    });
+}
+
+// 任务相关函数
+function loadTasks() {
+    fetch('/seckill/api/tasks')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            tasks = data.data;
+            renderTaskTable();
+        } else {
+            showToast('加载任务失败: ' + data.message, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('加载任务失败:', error);
+        showToast('加载任务失败', 'error');
+    });
+}
+
+function renderTaskTable() {
+    const tbody = document.getElementById('taskTableBody');
+    tbody.innerHTML = '';
+    
+    tasks.forEach(task => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${task.name}</td>
+            <td>
+                <span class="badge ${getStatusBadgeClass(task.status)}">${getStatusText(task.status)}</span>
+            </td>
+            <td>${formatDateTime(task.execution_time)}</td>
+            <td>${task.progress || '0/0'}</td>
+            <td>
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-primary" onclick="viewTask('${task.task_id}')">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    <button class="btn btn-outline-success" onclick="startTask('${task.task_id}')" ${task.status === 'running' ? 'disabled' : ''}>
+                        <i class="fas fa-play"></i>
+                    </button>
+                    <button class="btn btn-outline-danger" onclick="stopTask('${task.task_id}')" ${task.status === 'stopped' ? 'disabled' : ''}>
+                        <i class="fas fa-stop"></i>
+                    </button>
+                    <button class="btn btn-outline-warning" onclick="resetTask('${task.task_id}')">
+                        <i class="fas fa-redo"></i>
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="deleteTask('${task.task_id}')">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+function startTask(taskId) {
+    fetch(`/seckill/api/tasks/${taskId}/start`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('任务启动成功', 'success');
+            loadTasks();
+        } else {
+            showToast('任务启动失败: ' + data.message, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('启动任务失败:', error);
+        showToast('启动任务失败', 'error');
+    });
+}
+
+function stopTask(taskId) {
+    fetch(`/seckill/api/tasks/${taskId}/stop`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('任务停止成功', 'success');
+            loadTasks();
+        } else {
+            showToast('任务停止失败: ' + data.message, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('停止任务失败:', error);
+        showToast('停止任务失败', 'error');
+    });
+}
+
+function resetTask(taskId) {
+    if (confirm('确定要重置这个任务吗？')) {
+        fetch(`/seckill/api/tasks/${taskId}/reset`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showToast('任务重置成功', 'success');
+                loadTasks();
+            } else {
+                showToast('任务重置失败: ' + data.message, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('重置任务失败:', error);
+            showToast('重置任务失败', 'error');
+        });
+    }
+}
+
+function deleteTask(taskId) {
+    if (confirm('确定要删除这个任务吗？')) {
+        fetch(`/seckill/api/tasks/${taskId}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showToast('任务删除成功', 'success');
+                loadTasks();
+            } else {
+                showToast('任务删除失败: ' + data.message, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('删除任务失败:', error);
+            showToast('删除任务失败', 'error');
+        });
+    }
+}
+
+function viewTask(taskId) {
+    fetch(`/seckill/api/tasks/${taskId}`)
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            const task = data.data;
+            const content = document.getElementById('taskDetailContent');
+            content.innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>基本信息</h6>
+                        <p><strong>任务名称:</strong> ${task.name}</p>
+                        <p><strong>目标URL:</strong> ${task.url}</p>
+                        <p><strong>执行时间:</strong> ${formatDateTime(task.execution_time)}</p>
+                        <p><strong>时区:</strong> ${task.timezone}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>执行状态</h6>
+                        <p><strong>状态:</strong> <span class="badge ${getStatusBadgeClass(task.status)}">${getStatusText(task.status)}</span></p>
+                        <p><strong>尝试次数:</strong> ${task.attempts}/${task.max_attempts}</p>
+                        <p><strong>成功次数:</strong> ${task.success_count}</p>
+                        <p><strong>创建时间:</strong> ${formatDateTime(task.created_at)}</p>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6>配置信息</h6>
+                        <p><strong>目标选择器:</strong> ${task.target_selector} (${task.target_type})</p>
+                        <p><strong>执行频率:</strong> ${task.frequency} 秒</p>
+                        ${task.countdown_selector ? `<p><strong>倒计时选择器:</strong> ${task.countdown_selector} (${task.countdown_type})</p>` : ''}
+                    </div>
+                </div>
+            `;
+            
+            const modal = new bootstrap.Modal(document.getElementById('taskDetailModal'));
+            modal.show();
+        } else {
+            showToast('获取任务详情失败: ' + data.message, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('获取任务详情失败:', error);
+        showToast('获取任务详情失败', 'error');
+    });
+}
+
+// 工具函数
+function getStatusBadgeClass(status) {
+    switch (status) {
+        case 'running': return 'bg-success';
+        case 'stopped': return 'bg-danger';
+        case 'pending': return 'bg-warning';
+        default: return 'bg-secondary';
+    }
+}
+
+function getStatusText(status) {
+    switch (status) {
+        case 'running': return '运行中';
+        case 'stopped': return '已停止';
+        case 'pending': return '等待中';
+        default: return '未知';
+    }
+}
+
+function formatDateTime(dateTimeStr) {
+    if (!dateTimeStr) return '--';
+    const date = new Date(dateTimeStr);
+    return date.toLocaleString('zh-CN');
+}
+
+function openTaskManager() {
+    window.location.href = '/seckill/task-manager';
+}
+
+function openSettings() {
+    showToast('系统设置功能开发中', 'info');
+}
+
+// 页面卸载时清理定时器
+window.addEventListener('beforeunload', function() {
+    if (timeUpdateInterval) {
+        clearInterval(timeUpdateInterval);
+    }
+    if (schedulerUpdateInterval) {
+        clearInterval(schedulerUpdateInterval);
+    }
+});
+</script>
+
+<style>
+.badge {
+    font-size: 0.75em;
+}
+
+.btn-group-sm .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+.table th {
+    font-weight: 600;
+    background-color: #f8f9fa;
+}
+
+.card-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.modal-lg {
+    max-width: 800px;
+}
+
+#timeInfo small {
+    font-size: 0.75em;
+}
+
+#timeInfo div {
+    font-weight: 600;
+    font-family: monospace;
+}
+</style>
+{% endblock %} 
