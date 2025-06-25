@@ -44,27 +44,39 @@ class BrowserManager:
         self.logger = logging.getLogger(__name__)
         
     def get_browser(self, task_id: str) -> Optional[ChromiumPage]:
-        """获取浏览器实例"""
-        if task_id in self.browsers:
-            return self.browsers[task_id]
+        """获取浏览器实例，增加存活检查和自动重连机制"""
+        lock = self.browser_locks.setdefault(task_id, threading.Lock())
+        
+        with lock:
+            if task_id in self.browsers:
+                browser = self.browsers[task_id]
+                try:
+                    # 通过执行一个无害操作（获取标题）来检查浏览器是否仍然可控
+                    # 如果浏览器崩溃，该操作会抛出异常
+                    _ = browser.title
+                    self.logger.debug(f"浏览器实例 {task_id} 存活，复用。")
+                    return browser
+                except Exception as e:
+                    self.logger.warning(f"检查浏览器实例 {task_id} 状态时出错 ({e})，将清理并重新创建。")
+                    self.release_browser(task_id)
             
-        # 创建新的浏览器实例
-        if len(self.browsers) >= self.max_browsers:
-            self.logger.warning("达到最大浏览器实例数限制")
-            return None
-            
-        try:
-            browser = ChromiumPage()
-            browser.set.timeouts(30)  # 30秒超时
-            
-            self.browsers[task_id] = browser
-            self.browser_locks[task_id] = threading.Lock()
-            
-            self.logger.info(f"创建浏览器实例: {task_id}")
-            return browser
-        except Exception as e:
-            self.logger.error(f"创建浏览器实例失败: {str(e)}")
-            return None
+            # 创建新的浏览器实例
+            if len(self.browsers) >= self.max_browsers:
+                self.logger.warning(f"达到最大浏览器实例数限制 ({self.max_browsers})。")
+                return None
+                
+            try:
+                self.logger.info(f"为任务 {task_id} 创建新的浏览器实例...")
+                browser = ChromiumPage()
+                browser.set.timeouts(30)
+                
+                self.browsers[task_id] = browser
+                
+                self.logger.info(f"创建浏览器实例成功: {task_id}")
+                return browser
+            except Exception as e:
+                self.logger.error(f"创建浏览器实例失败: {str(e)}", exc_info=True)
+                return None
             
     def release_browser(self, task_id: str):
         """释放浏览器实例"""
@@ -103,55 +115,15 @@ class BrowserManager:
         
         with lock:
             try:
-                # 检查页面状态缓存
-                page_state = self.page_states.get(task_id)
+                # 检查页面状态缓存 - 这部分逻辑可以简化，因为DrissionPage本身处理得很好
                 current_url = browser.url if hasattr(browser, 'url') else None
+                if current_url == url and not force_reload:
+                    self.logger.info(f"URL {url} 已加载，跳过。")
+                    return True, "URL已加载"
+
+                self.logger.info(f"加载页面: {task_id} -> {url}")
+                browser.get(url)
                 
-                # 判断是否需要重新加载
-                need_reload = force_reload
-                
-                if not need_reload and page_state:
-                    # 检查URL是否相同
-                    if current_url == url and page_state.is_loaded:
-                        # 检查缓存是否过期
-                        if (datetime.now() - page_state.last_activity).seconds < self.page_cache_timeout:
-                            self.logger.info(f"使用页面缓存: {task_id} -> {url}")
-                            page_state.update_activity()
-                            return True, "使用页面缓存"
-                        else:
-                            self.logger.info(f"页面缓存已过期: {task_id}")
-                            need_reload = True
-                    else:
-                        need_reload = True
-                else:
-                    need_reload = True
-                
-                if need_reload:
-                    self.logger.info(f"加载页面: {task_id} -> {url}")
-                    
-                    # 加载URL
-                    browser.get(url)
-                    
-                    # 等待页面加载完成
-                    browser.wait.doc_loaded()
-                    time.sleep(2)  # 额外等待JavaScript加载
-                    
-                    # 验证页面是否真正加载完成
-                    ready_state = browser.run_js('return document.readyState')
-                    if ready_state != 'complete':
-                        return False, "页面加载不完整"
-                        
-                    # 验证页面是否有效
-                    body_check = browser.run_js('return document.body !== null')
-                    if not body_check:
-                        return False, "页面无效"
-                    
-                    # 更新页面状态缓存
-                    self.page_states[task_id] = PageState(url)
-                    self.page_states[task_id].mark_loaded()
-                    
-                    self.logger.info(f"页面加载成功: {url}")
-                    
                 return True, "URL加载成功"
                 
             except Exception as e:
@@ -245,68 +217,64 @@ class BrowserManager:
                 self.logger.error(f"查找元素失败: {str(e)}")
                 return False, str(e), []
                 
-    def click_element(self, task_id: str, selector_type: str, selector_value: str, 
-                     click_count: int = 1, interval: float = 0.1) -> Tuple[bool, str]:
-        """
-        点击元素（支持连续点击）
-        
-        Args:
-            task_id: 任务ID
-            selector_type: 选择器类型
-            selector_value: 选择器值
-            click_count: 点击次数
-            interval: 点击间隔（秒）
-            
-        Returns:
-            (是否成功, 消息)
-        """
+    def single_click_element(self, task_id: str, selector_type: str, selector_value: str) -> Tuple[bool, str]:
+        """执行单次点击"""
         browser = self.get_browser(task_id)
-        if not browser:
-            return False, "无法获取浏览器实例"
+        if not browser: return False, "无法获取浏览器实例"
             
         lock = self.browser_locks[task_id]
-        
         with lock:
             try:
-                # 查找元素
-                if selector_type == 'css':
-                    element = browser.ele(f'css:{selector_value}')
-                elif selector_type == 'xpath':
-                    element = browser.ele(f'xpath:{selector_value}')
-                elif selector_type == 'text':
-                    element = browser.ele(f'text:{selector_value}')
-                elif selector_type == 'tag':
-                    element = browser.ele(f'tag:{selector_value}')
-                else:
-                    return False, "无效的选择器类型"
-                    
-                if not element:
-                    return False, "未找到目标元素"
-                    
-                # 执行点击
-                success_count = 0
+                selector = f'{selector_type}:{selector_value}'
+                element = browser.ele(selector, timeout=0.5)
+                if not element: return False, f"未找到元素: {selector}"
+                
+                element.click()
+                self.logger.info(f"单次点击元素成功: {selector}")
+                return True, "单次点击成功"
+            except Exception as e:
+                self.logger.error(f"单次点击失败: {str(e)}")
+                return False, str(e)
+
+    def continuous_click_element(self, task_id: str, selector_type: str, selector_value: str, 
+                                 click_count: int, interval: float) -> Tuple[bool, str]:
+        """执行连续点击"""
+        browser = self.get_browser(task_id)
+        if not browser: return False, "无法获取浏览器实例"
+            
+        lock = self.browser_locks[task_id]
+        with lock:
+            try:
+                selector = f'{selector_type}:{selector_value}'
+                element = browser.ele(selector, timeout=0.5)
+                if not element: return False, f"未找到元素: {selector}"
+
+                self.logger.info(f"开始连续点击 {click_count} 次，间隔 {interval} 秒")
                 for i in range(click_count):
                     try:
                         element.click()
-                        success_count += 1
-                        
-                        if i < click_count - 1:  # 不是最后一次点击
+                        self.logger.debug(f"第 {i + 1}/{click_count} 次点击成功。")
+                        if i < click_count - 1:
                             time.sleep(interval)
-                            
-                    except Exception as e:
-                        self.logger.warning(f"第{i+1}次点击失败: {str(e)}")
-                        break
-                        
-                if success_count == click_count:
-                    return True, f"连续点击成功: {click_count}次"
-                elif success_count > 0:
-                    return True, f"部分点击成功: {success_count}/{click_count}次"
-                else:
-                    return False, "所有点击都失败"
-                    
+                    except Exception as loop_e:
+                        self.logger.error(f"连续点击在第 {i + 1} 次时失败: {loop_e}")
+                        return False, f"部分点击失败 ({i+1}/{click_count}次)"
+                
+                self.logger.info(f"连续点击成功完成: {click_count}次")
+                return True, "连续点击成功"
             except Exception as e:
-                self.logger.error(f"点击元素失败: {str(e)}")
+                self.logger.error(f"连续点击失败: {str(e)}")
                 return False, str(e)
+
+    def click_element(self, task_id: str, selector_type: str, selector_value: str, 
+                     click_count: int = 1, interval: float = 0.1) -> Tuple[bool, str]:
+        """
+        根据点击次数，分发到不同的点击方法
+        """
+        if click_count > 1:
+            return self.continuous_click_element(task_id, selector_type, selector_value, click_count, interval)
+        else:
+            return self.single_click_element(task_id, selector_type, selector_value)
                 
     def input_text(self, task_id: str, selector_type: str, selector_value: str, text: str) -> Tuple[bool, str]:
         """输入文本"""

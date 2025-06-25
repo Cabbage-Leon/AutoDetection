@@ -7,7 +7,7 @@
 import uuid
 import json
 from datetime import datetime, timedelta
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Tuple
 import logging
 
 class SeckillTask:
@@ -29,7 +29,7 @@ class SeckillTask:
                  click_count: int = 1,
                  click_interval: float = 0.1,
                  countdown_threshold: int = 0,
-                 preload_seconds: int = 30,
+                 preload_seconds: int = 30,  # 浏览器预热时间（秒），即任务执行前提前打开页面的秒数
                  countdown_end_flags: list = None,
                  **kwargs):
         """
@@ -51,7 +51,7 @@ class SeckillTask:
             click_count: 连续点击次数
             click_interval: 点击间隔（秒）
             countdown_threshold: 倒计时阈值（秒）
-            preload_seconds: 提前预热时间（秒）
+            preload_seconds: 浏览器预热时间（秒），即任务执行前提前打开页面的秒数
             countdown_end_flags: 倒计时结束标志（列表）
         """
         self.task_id = task_id or str(uuid.uuid4())
@@ -80,7 +80,13 @@ class SeckillTask:
         self.created_at = datetime.now()
         self.last_execution = None
         self.next_execution = execution_time
+        self.is_preloaded = False # 浏览器是否已预热
         
+        # 点击成功验证
+        self.success_check_type = kwargs.get('success_check_type', 'none') # none, url_contains, element_exists, url_not_contains
+        self.success_check_value = kwargs.get('success_check_value')
+        self.success_check_selector_type = kwargs.get('success_check_selector_type', 'css')
+
         # 额外配置
         self.config = kwargs
         
@@ -94,8 +100,8 @@ class SeckillTask:
         if self.attempts >= self.max_attempts:
             return False
             
-        # 检查是否到达执行时间
-        if current_time >= self.execution_time:
+        # 检查是否到达下次执行时间
+        if self.next_execution and current_time >= self.next_execution:
             return True
             
         return False
@@ -138,6 +144,8 @@ class SeckillTask:
         self.is_running = True
         self.attempts += 1
         self.last_execution = datetime.now()
+        # 为下一次可能的重试更新下一次执行时间
+        self.next_execution = self.last_execution + timedelta(seconds=self.frequency)
         
         try:
             self.logger.info(f"开始执行任务: {self.name} (第{self.attempts}次)")
@@ -148,6 +156,7 @@ class SeckillTask:
             if success:
                 self.success_count += 1
                 self.logger.info(f"任务执行成功: {self.name}")
+                self.stop() # 任务成功后自动停止，防止重复执行
             else:
                 self.logger.warning(f"任务执行失败: {self.name}")
                 
@@ -178,8 +187,17 @@ class SeckillTask:
         self.is_running = False
         self.last_execution = None
         self.next_execution = self.execution_time
+        self.is_preloaded = False
         self.logger.info(f"任务已重置: {self.name}")
         
+    def should_preload(self, current_time: datetime) -> bool:
+        """检查是否应该预热浏览器"""
+        if self.is_stopped or self.is_preloaded or self.preload_seconds <= 0:
+            return False
+
+        preload_start_time = self.execution_time - timedelta(seconds=self.preload_seconds)
+        return preload_start_time <= current_time < self.execution_time
+
     def _execute_seckill_logic(self) -> bool:
         """执行秒杀逻辑（支持自定义倒计时结束标志和提前预热）"""
         try:
@@ -189,29 +207,22 @@ class SeckillTask:
             import time
             self.logger.info(f"开始执行秒杀逻辑: {self.name}")
 
-            # 1. 提前预热：如果当前时间在执行时间前 preload_seconds 秒，先加载页面但不点击
-            now = datetime.now()
-            preload_time = self.execution_time - timedelta(seconds=self.preload_seconds)
-            if now < preload_time:
-                wait_seconds = (preload_time - now).total_seconds()
-                self.logger.info(f"提前预热，等待 {wait_seconds:.2f} 秒后加载页面")
-                time.sleep(wait_seconds)
+            # 1. 精确等待到执行时间
+            now = time_sync.get_synced_time()
+            if now < self.execution_time:
+                wait_seconds = (self.execution_time - now).total_seconds()
+                if wait_seconds > 0:
+                    self.logger.info(f"精确等待 {wait_seconds:.3f} 秒")
+                    time.sleep(wait_seconds)
 
-            # 2. 加载页面（预热或正式执行都要加载）
+            # 2. 确保页面已加载（如果未预热成功，会在此处加载）
             success, message = browser_manager.load_url(self.task_id, self.url, force_reload=False)
             if not success:
                 self.logger.error(f"加载页面失败: {message}")
                 return False
             self.logger.info(f"页面加载成功: {self.url}")
 
-            # 3. 如果是预热阶段，加载后直接返回，等待调度器到正式执行时间再进入下一步
-            now = datetime.now()
-            if now < self.execution_time:
-                wait_seconds = (self.execution_time - now).total_seconds()
-                self.logger.info(f"页面已预热，等待 {wait_seconds:.2f} 秒到正式执行时间")
-                time.sleep(wait_seconds)
-
-            # 4. 检查倒计时（如果有）：轮询等待，支持自定义结束标志
+            # 3. 检查倒计时（如果有）：轮询等待，支持自定义结束标志
             if self.countdown_selector and self.countdown_type:
                 max_wait = 30  # 最多等待30秒
                 poll_interval = 0.5
@@ -239,7 +250,7 @@ class SeckillTask:
                     self.logger.warning(f"倒计时等待超时，未检测到结束标志或阈值")
                     return False
 
-            # 5. 查找目标元素
+            # 4. 查找目标元素
             success, message, elements = browser_manager.find_element(
                 self.task_id, self.target_type, self.target_selector
             )
@@ -248,31 +259,71 @@ class SeckillTask:
                 return False
             self.logger.info(f"找到目标元素: {len(elements)} 个")
 
-            # 6. 根据点击模式执行点击
+            # 5. 根据点击模式执行点击
             if self.click_mode == 'continuous':
-                success, message = browser_manager.click_element(
+                success, message = browser_manager.continuous_click_element(
                     self.task_id, self.target_type, self.target_selector,
                     click_count=self.click_count, interval=self.click_interval
                 )
                 self.logger.info(f"连续点击结果: {message}")
             else:
-                success, message = browser_manager.click_element(
+                success, message = browser_manager.single_click_element(
                     self.task_id, self.target_type, self.target_selector
                 )
                 self.logger.info(f"单次点击结果: {message}")
+
             if not success:
                 self.logger.error(f"点击元素失败: {message}")
                 return False
-            time.sleep(1)
+
+            # 6. 点击后验证（如果已配置）
+            if self.success_check_type != 'none':
+                time.sleep(1) # 等待1秒让页面有时间响应
+                verify_success, verify_message = self._verify_click_success(browser_manager)
+                if not verify_success:
+                    self.logger.warning(f"点击成功验证失败: {verify_message}")
+                    return False
+                self.logger.info(f"点击成功验证通过: {verify_message}")
+
             self.logger.info(f"秒杀执行完成: {self.name}")
             return True
         except Exception as e:
             self.logger.error(f"秒杀逻辑执行异常: {str(e)}")
             return False
         
+    def _verify_click_success(self, browser_manager) -> Tuple[bool, str]:
+        """验证点击是否真正成功"""
+        browser = browser_manager.get_browser(self.task_id)
+        if not browser:
+            return False, "无法获取浏览器实例进行验证"
+
+        try:
+            if self.success_check_type == 'url_contains':
+                current_url = browser.url
+                if self.success_check_value in current_url:
+                    return True, f"URL '{current_url}' 包含 '{self.success_check_value}'"
+                else:
+                    return False, f"URL '{current_url}' 不包含 '{self.success_check_value}'"
+            
+            elif self.success_check_type == 'element_exists':
+                selector = f'{self.success_check_selector_type}:{self.success_check_value}'
+                element = browser.ele(selector, timeout=2)
+                return (True, f"元素 '{selector}' 已出现") if element else (False, f"元素 '{selector}' 未在2秒内出现")
+
+            elif self.success_check_type == 'url_not_contains':
+                current_url = browser.url
+                if self.success_check_value not in current_url:
+                    return True, f"URL '{current_url}' 不包含 '{self.success_check_value}'"
+                else:
+                    return False, f"URL '{current_url}' 包含了不应出现的 '{self.success_check_value}' (可能跳转到了登录页)"
+
+            return False, "未知的验证类型"
+        except Exception as e:
+            return False, f"验证过程中出现异常: {e}"
+
     def to_dict(self) -> Dict:
         """转换为字典"""
-        return {
+        data = {
             'task_id': self.task_id,
             'name': self.name,
             'url': self.url,
@@ -297,8 +348,13 @@ class SeckillTask:
             'created_at': self.created_at.isoformat(),
             'last_execution': self.last_execution.isoformat() if self.last_execution else None,
             'next_execution': self.get_next_execution().isoformat() if self.get_next_execution() else None,
-            'config': self.config
+            'config': self.config,
+            # Success check fields
+            'success_check_type': self.success_check_type,
+            'success_check_value': self.success_check_value,
+            'success_check_selector_type': self.success_check_selector_type,
         }
+        return data
         
     @classmethod
     def from_dict(cls, data: Dict) -> 'SeckillTask':

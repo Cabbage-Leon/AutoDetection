@@ -11,10 +11,6 @@ def index():
     """渲染浏览器自动化页面"""
     return render_template('browser_automation/index.html')
 
-@bp.route('/seckill')
-def seckill():
-    return render_template('browser_automation/seckill.html')
-
 @bp.route('/load-url', methods=['POST'])
 def load_url():
     """加载URL"""

@@ -65,23 +65,10 @@ def create_task():
                 'message': '执行时间格式无效'
             }), 400
         
-        # 创建任务
-        task = SeckillTask(
-            name=data['name'],
-            url=data['url'],
-            target_selector=data['target_selector'],
-            target_type=data['target_type'],
-            execution_time=execution_time,
-            countdown_selector=data.get('countdown_selector'),
-            countdown_type=data.get('countdown_type'),
-            frequency=data.get('frequency', 1),
-            max_attempts=data.get('max_attempts', 10),
-            timezone=data.get('timezone', 'Asia/Shanghai'),
-            click_mode=data.get('click_mode', 'single'),
-            click_count=data.get('click_count', 1),
-            click_interval=data.get('click_interval', 0.1),
-            countdown_threshold=data.get('countdown_threshold', 0)
-        )
+        data['execution_time'] = execution_time
+
+        # 使用**data将所有参数传递给构造函数
+        task = SeckillTask(**data)
         
         # 添加到调度器
         if scheduler.add_task(task):
@@ -105,10 +92,21 @@ def create_task():
 
 @bp.route('/api/tasks/<task_id>', methods=['GET'])
 def get_task(task_id):
-    """获取指定任务"""
+    """获取指定任务的完整信息"""
     try:
-        task_info = scheduler.get_task_status(task_id)
-        if task_info:
+        task = scheduler.tasks.get(task_id)
+        if task:
+            task_info = task.to_dict()
+            is_running = task_id in scheduler.running_tasks
+            
+            # 计算并添加任务状态
+            status = 'pending'
+            if is_running:
+                status = 'running'
+            elif task.is_stopped:
+                status = 'stopped'
+            task_info['status'] = status
+
             return jsonify({
                 'success': True,
                 'data': task_info
@@ -148,7 +146,8 @@ def update_task(task_id):
         update_fields = ['name', 'url', 'target_selector', 'target_type', 
                         'countdown_selector', 'countdown_type', 'frequency', 
                         'max_attempts', 'timezone', 'click_mode', 'click_count',
-                        'click_interval', 'countdown_threshold']
+                        'click_interval', 'countdown_threshold', 'preload_seconds',
+                        'remark', 'success_check_type', 'success_check_value', 'success_check_selector_type']
         
         for field in update_fields:
             if field in data:
